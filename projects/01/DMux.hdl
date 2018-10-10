@@ -1,0 +1,34 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/01/DMux.hdl
+
+/**
+ * Demultiplexor:
+ * {a, b} = {in, 0} if sel == 0
+ *          {0, in} if sel == 1
+ */
+
+CHIP DMux {
+    IN in, sel;
+    OUT a, b;
+
+    PARTS:
+    /*
+    this function
+    in | sel | a | b
+    0  | 0   | 0 | 0
+    0  | 1   | 0 | 0
+    1  | 0   | 1 | 0
+    1  | 1   | 0 | 1
+
+    Column b is just the and function 
+    Column a must be one of the 16 boolean functions of 2 variables
+    from the table on page 10, it's `x and not y` = and(x, not(y))
+
+    */
+
+    And(a=in, b=sel, out=b);
+    Not(in=sel, out=notsel);
+    And(a=in, b=notsel, out=a);
+}
