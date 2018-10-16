@@ -40,13 +40,16 @@ CHIP FullAdder {
     Mux(a=carry0, b=carry1, sel=a, out=carry);
     */
 
-    /* Wikipedia's solution #1, just logic */
-    /* https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder */
-    Xor(a=sum0, b=c, out=sum);
+    /* Wikipedia's solution #1, just logic  */
+    /* https://en.wikipedia.org/wiki/Adder_(electronics)#Full_adder  */
+    /* Sum = A xor B xor C_in */
+    Xor(a=a, b=b, out=x);
+    Xor(a=x, b=c, out=sum);
+    /* C_out = (A and B) or (C_in or (A xor B)) */
+    And(a=a, b=b, out=and0);
+    And(a=c, b=x, out=and1);
+    Or(a=and0, b=and1, out=carry);
 
-    And(a=a, b=b, out=x);
-    And(a=sum0, b=c, out=y);
-    Or(a=x, b=y, out=carry);
 
     /* Wikipedia's solution #2, 2 half adders */
     /*
