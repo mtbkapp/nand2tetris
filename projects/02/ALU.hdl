@@ -63,13 +63,12 @@ CHIP ALU {
 
     /* output */
     Not16(in=firstOut, out=notOut);
-    Mux16(a=firstOut, b=notOut, sel=no, out=realOut);
-    Or16(a=realOut, b=false, out=out);
+    Mux16(a=firstOut, b=notOut, sel=no, out=realOut, out=out);
 
     /* status bits */
     /* out == 0 ? zr = 1 : zr = 0 */
     Eq16(a=realOut, b=false, out=zr);
 
     /* out < 0 ? ng = 1 : ng = 0 */
-    IsNegative(in=realOut, out=ng);
+    Not(in=realOut[15], out=ng);
 }

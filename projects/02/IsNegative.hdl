@@ -1,8 +1,0 @@
-CHIP IsNegative {
-    IN in[16];
-    OUT out;
-
-    PARTS:
-    Xor(a=in[15], b=true, out=isNot);
-    Not(in=isNot, out=out);
-}
