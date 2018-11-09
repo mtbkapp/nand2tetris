@@ -14,14 +14,14 @@
 //@R0
 //M=D
 
-// put 2 into R1 
+// put 2 into R1
 //@0
 //D=A
 //@R1
 //M=D
 
-// optimize by choosing to loop the least amount of times 
-// Swap R0 and R1 if R0 > R1 
+// optimize by choosing to loop the least amount of times
+// Swap R0 and R1 if R0 > R1
 // algebra: R0 - R1 > 0
 
 // put R0 into D
@@ -38,7 +38,7 @@ D;JGT
 0;JMP
 
 (SWAP)
-  // put R0 into swap 
+  // put R0 into swap
   @R0
   D=M
   @swap
