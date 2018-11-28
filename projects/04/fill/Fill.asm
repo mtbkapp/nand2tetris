@@ -11,22 +11,10 @@
 // "white" in every pixel;
 // the screen should remain fully clear as long as no key is pressed.
 
-// Put your code here.
-
-// function calling routine:
-//    1 put return address in @return
-//    2 jump to function
-//    3 function runs
-//    4 function must jump to @return
-
 // make white and black constants
 // black 0xffff
-@32767 // A is only 15 bits, no A is 16 bits but an A instruction can only hold 15 bits!
-D=A
-D=D+A // 0x7fff + 0x7fff = 0xfffe
-D=D+1 // + 1 to get to 0xffff
 @black
-M=D   // store @black
+M=-1   // store @black
 
 @0
 D=A
