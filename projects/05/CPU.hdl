@@ -39,5 +39,119 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+    /* A instruction */
+    /* 0xxx xxxx xxxx xxxx */
+    /* store into A */
+
+    /* C instructions */
+    /* 1__x xxxx xxxx xxxx */
+    /* [1 _ _] [a c c c c c c] [d d d] [j j j] */
+    /*  5 4 3   2 1 0 9 8 7 6   5 4 3   2 1 0 */
+
+    /* So convienient that the c bits line up perfectly with the ALU control bits  */
+    ALU(x=Dout, y=MorA, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=aluOut, out=outM, zr=zr, ng=ng);
+    /* set y to A if a is 0, else set y to M */
+    Mux16(a=Aout, b=inM, sel=instruction[12], out=MorA);
+
+    /* Destinations */ 
+    /* d d d
+       0 0 0  null
+       0 0 1  M
+       0 1 0  D
+       0 1 1  MD
+       1 0 0  A
+       1 0 1  AM
+       1 1 0  AD
+       1 1 1  ADM    */
+
+    /* d1 = instruction[5] -> store in A */
+    /* d2 = instruction[4] -> store in D */
+    /* d3 = instruction[3] -> store in M */
+
+    /* A */
+    /* write to A if destitation is A or A instruction */
+    Not(in=instruction[15], out=notI15);
+    Or(a=instruction[5], b=notI15, out=writeA);
+    /* input to A is aluOut for C instructions
+       or instruction[0..14] for A instruction */ 
+    Mux16(a[15]=false, a[0..14]=instruction[0..14], b=aluOut, sel=instruction[15], out=Ain);
+    ARegister(in=Ain, out[0..14]=addressM, out=Aout, load=writeA);
+    
+    /* D */
+    /* only store to D if C instruction */
+    And(a=instruction[4], b=instruction[15], out=writeD);
+    DRegister(in=aluOut, out=Dout, load=writeD);
+
+    /* M */
+    /* writeM = 1 if M is destination */
+    /* outM = result of op */
+    /* addressM = A */
+    /* inM = value of M */
+
+    /* store M ? */
+    /* if C instruction AND d3 */
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    /* Jumps */ 
+    /* j1 j2 j3
+       0  0  0  null
+       0  0  1  JGT  out >  0 
+       0  1  0  JEQ  out =  0
+       0  1  1  JGE  out >= 0
+       1  0  0  JLT  out <  0
+       1  0  1  JNE  out != 0
+       1  1  0  JLE  out <= 0
+       1  1  1  JMP  unconditional  */
+
+     /* jump means, store A into PC */
+     Not(in=zr, out=notZr);
+     Not(in=ng, out=notNg);
+     Not(in=instruction[2], out=notJ1);
+     Not(in=instruction[1], out=notJ2);
+     Not(in=instruction[0], out=notJ3);
+
+     /* jgt = !j1 && !j2 && j3 && !zr && !ng */
+     And(a=notJ1, b=notJ2, out=jgt0); 
+     And(a=jgt0, b=instruction[0], out=jgt1);
+     And(a=jgt1, b=notZr, out=jgt2);
+     And(a=jgt2, b=notNg, out=jgt);
+
+     /* jeq = !j1 && j2 && !j3 && zr */
+     And(a=notJ1, b=instruction[1], out=jeq0);
+     And(a=jeq0, b=notJ3, out=jeq1);
+     And(a=jeq1, b=zr, out=jeq);
+
+     /* jge !j1 && j2 && j3 && (zr || !ng) */
+     And(a=notJ1, b=instruction[1], out=jge0);
+     And(a=jge0, b=instruction[0], out=jge1);
+     Or(a=zr, b=notNg, out=zrORng);
+     And(a=zrORng, b=jge1, out=jge);
+
+     /* jlt = j1 && !j2 && !j3 && ng */
+     And(a=instruction[2], b=notJ2, out=jlt0);
+     And(a=jlt0, b=notJ3, out=jlt1);
+     And(a=jlt1, b=ng, out=jlt);
+
+     /* jne = j1 && !j2 && j3 && !zr */
+     And(a=instruction[2], b=notJ2, out=jne0);
+     And(a=jne0, b=instruction[0], out=jne1);
+     And(a=jne1, b=notZr, out=jne);
+
+     /* jle = j1 && j2 && !j3 && (zr || ng) */
+     And(a=instruction[2], b=instruction[1], out=jle0);
+     And(a=jle0, b=notJ3, out=jle1);
+     Or(a=zr, b=ng, out=jle2);
+     And(a=jle1, b=jle2, out=jle);
+
+     /* jmp = j1 && j2 && j3 */
+     And(a=jle0, b=instruction[0], out=jmp);
+
+     /* jump? = jgt || jeq || jge || jlt || jne || jle || jmp */
+     /* pcLoad = jump?  */
+     /* pcInc = !pcLoad */
+    Or8Way(in[0]=jgt, in[1]=jeq, in[2]=jge, in[3]=jlt, in[4]=jne, in[5]=jle, in[6]=jmp, in[7]=false, out=pcLoad0);
+    /* only jump if C instruction */
+    And(a=pcLoad0, b=instruction[15], out=pcLoad);
+    Not(in=pcLoad, out=pcInc);
+    PC(in=Aout, load=pcLoad, inc=pcInc, reset=reset, out[0..14]=pc);
 }
