@@ -64,7 +64,7 @@
      R[16-255]       static / assembler labels
      R[256-2047]     stack
      R[2048-16383]   heap
-     R[16384-24575]  memory mappe I/O
+     R[16384-24575]  memory mapped I/O
      R[24575-32767]  unused memory space?"
   (:require [clojure.string :as string]
             [clojure.pprint :refer [pprint]]
