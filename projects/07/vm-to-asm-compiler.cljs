@@ -6,7 +6,8 @@
                the self hosted version of ClojureScript.
    
    Running:
-     * `planck ./vm-to-asm-compiler.cljs dir1 dir2 ...`
+     * `planck ./vm-to-asm-compiler.cljs dir1` or:
+     * `planck ./vm-to-asm-compiler.cljs a/b/c.vm`
 
    General algorithm:
      Input: a list of directories that may contain .vm code files.. 
@@ -412,23 +413,6 @@
   (.replace (str file) vm-file-pattern ".asm"))
 
 
-(defn file-seq
-  "Implementation of JVM Clojure's file-seq with planck.io."
-  [dir]
-  (tree-seq (fn [file] (io/directory? file))
-            (fn [dir] (io/list-files dir))
-            dir))
-
-
-(defn collect-vm-files
-  "Given a collection of directories returns a vector of .vm files in those 
-  directories."
-  [dirs]
-  (into [] (comp (mapcat file-seq)
-                 (filter vm-file?))
-        dirs))
-
-
 (defn prelude-val
   "Generates assembly code to set up a single value for the prelude, see below."
   [pointer v]
@@ -450,36 +434,57 @@
    "// end prelude"])
 
 
-(defn compile!
-  [dirs]
-  (doseq [file (collect-vm-files dirs)]
-    (println "Compiling " (str file))
-    (->> 
-      ; read each file and compile it into a vector of assembly code
-      (p/slurp file)
-      (compile-vm-code file)
-      ; prepend the prelude
-      (into prelude)
-      ; take the nested vector of vectors of assembly code and flatten it into
-      ; a single sequence of instructions
-      (flatten)
-      ; join the sequence of instructions into a single string and write the file.
-      (string/join "\n")
-      (p/spit (output-file file)))))
+(defn compile-file*
+  "Compiles a single vm file and returns a string of the asm code."
+  [file]
+  (println "Compiling" (str file))
+  (->> (p/slurp file)
+       (compile-vm-code file)
+       (into prelude)
+       (flatten)
+       (string/join "\n")))
 
 
-(defn validate-args! 
-  "Asserts that every item in args is a directory."
-  [args]
-  (doseq [f args]
-    (assert (io/directory? (io/as-file f))
-            "All arguments must be directories.")))
+(defn compile-file
+  "Compiles a single vm file. The output asm file will be a sibling of the vm 
+  file on the filesystem."
+  [file]
+  (p/spit (output-file file)
+          (compile-file* file)))
+
+
+(defn dir->asm-file
+  "Given a directory to be compiled generates the name of the output asm file."
+  [dir]
+  (let [[_ last-seg] (re-find #"/([^/]+)$" (str dir))]
+    (io/file "./" (str last-seg ".asm"))))
+
+
+(defn compile-dir
+  "Compiles all the vm files in the given directory. Outputs a single asm file
+  in the pwd with the same name as the directory."
+  [dir]
+  (let [asm-file (dir->asm-file dir)]
+    (p/spit asm-file (str "// Compiled from dir " dir "\n"))
+    (doseq [file (io/list-files dir)]
+      (when (vm-file? file)
+        (p/spit asm-file 
+                (str "// Start " file "\n" 
+                     (compile-file* file) "\n"
+                     "// End " file "\n")
+                :append true)))))
+
+
+(def usage "Usage: planck vm-to-asm-compiler.cljs <source>\n source is a directory or an vm file.")
 
 
 (defn -main
   [& args]
-  (validate-args! args)
-  (compile! args))
+  (assert (= 1 (count args)) usage)
+  (let [file (io/file (first args))]
+    (if (io/directory? file)
+      (compile-dir file)
+      (compile-file file))))
 
 
 (set! *main-cli-fn* -main)
