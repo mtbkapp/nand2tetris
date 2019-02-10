@@ -100,6 +100,13 @@
    inc-sp])
 
 
+(defn with-comment 
+  [c code]
+  [(str "// start " (prn-str c))
+   code
+   (str "// end " (prn-str c))])
+
+
 (defmulti compile-cmd
   "Translates a single command to assembly code. Returns a potentially nested
   vector of strings. Using clojure.core/flatten will result in a flat sequence
@@ -171,141 +178,127 @@
   "Generates assembly code that pushes a value from an absolute segment 
   (pointer, temp) to the stack."
   [mem-seg offset]
-  [(str "// push " mem-seg)
-   (str "@" (static-mem-seg-addr mem-seg offset))
+  [(str "@" (static-mem-seg-addr mem-seg offset))
    "D=M"
-   push-D
-   (str "// end push " mem-seg)])
+   push-D])
 
 
 (defn push-constant-seg
   "Generates assembly code that pushes a constant value onto the stack."
   [value]
-  ["// push constant"
-   (str "@" value)
+  [(str "@" value)
    "D=A"
-   push-D
-   "// end push constant"])
+   push-D])
 
 
 (defn push-static-seg
   "Generates assembly code that pushes a static variable onto the stack."
   [file offset]
-  ["// push static"
-   (static-addr file offset)
+  [(static-addr file offset)
    "D=M"
-   push-D
-   "// end push static"])
+   push-D])
 
 
 (defn push-relative-seg
   "Generates assembly code that pushes a value from a relative segment (local,
   argument, this, that) onto the stack."
   [mem-seg offset]
-  [(str "// push " mem-seg)
-   (mem-seg-addr-to-A mem-seg offset)
+  [(mem-seg-addr-to-A mem-seg offset)
    "D=M"
-   push-D
-   (str "// end push " mem-seg)])
+   push-D])
 
 
 ; Generates assembly code for the push instruction. Throws an error if an 
 ; invalid memory segment is referenced.
 (defmethod compile-cmd :push
-  [file [_ mem-seg offset]]
-  (let [offset (js/parseInt offset)]
-    (cond (= mem-seg "constant") (push-constant-seg offset)
-          (= mem-seg "static") (push-static-seg file offset)
-          (contains? relative-segs mem-seg) (push-relative-seg mem-seg offset)
-          (contains? absolute-segs mem-seg) (push-absolute-seg mem-seg offset)
-          :else (throw-invalid-seg mem-seg))))
+  [file [_ mem-seg offset :as cmd]]
+  (with-comment cmd
+    (let [offset (js/parseInt offset)]
+      (cond (= mem-seg "constant") (push-constant-seg offset)
+            (= mem-seg "static") (push-static-seg file offset)
+            (contains? relative-segs mem-seg) (push-relative-seg mem-seg offset)
+            (contains? absolute-segs mem-seg) (push-absolute-seg mem-seg offset)
+            :else (throw-invalid-seg mem-seg)))))
 
 
 (defn pop-static-seg
   "Generates assembly code that pops the top value from the stack into a stack
   variable."
   [file offset]
-  ["// pop static"
-   pop-to-D
+  [pop-to-D
    (static-addr file offset)
-   "M=D"
-   "// end pop static"])
+   "M=D"])
 
 
 (defn pop-relative-seg
   "Generates assembly code that pops the top value from the stack into a 
   relative memory segment (local, argument, this, that)."
   [mem-seg offset]
-  [(str "// pop " mem-seg)
-   (mem-seg-addr-to-A mem-seg offset)
+  [(mem-seg-addr-to-A mem-seg offset)
    "D=A"
    "@R13"
    "M=D"
    pop-to-D
    "@R13"
    "A=M"
-   "M=D"
-   (str "// end pop " mem-seg)])
+   "M=D"])
 
 
 (defn pop-absolute-seg
   "Generates assembly code that pops the top value from the stack into an 
   absolute memory segment (pointer, temp)."
   [mem-seg offset]
-  [(str "// pop " mem-seg)
-   pop-to-D
+  [pop-to-D
    (str "@" (static-mem-seg-addr mem-seg offset))
-   "M=D"
-   (str "// end pop " mem-seg)])
+   "M=D"])
 
 
 ; Generates assembly code for the pop instruction. Throws an error if an invalid
 ; memory segment is referenced.
 (defmethod compile-cmd :pop
-  [file [_ mem-seg offset]]
-  (let [offset (js/parseInt offset)]
-    (cond (= mem-seg "static") (pop-static-seg file offset)
-          (contains? relative-segs mem-seg) (pop-relative-seg mem-seg offset)
-          (contains? absolute-segs mem-seg) (pop-absolute-seg mem-seg offset)
-          :else (throw-invalid-seg mem-seg))))
+  [file [_ mem-seg offset :as cmd]]
+  (with-comment cmd
+    (let [offset (js/parseInt offset)]
+      (cond (= mem-seg "static") (pop-static-seg file offset)
+            (contains? relative-segs mem-seg) (pop-relative-seg mem-seg offset)
+            (contains? absolute-segs mem-seg) (pop-absolute-seg mem-seg offset)
+            :else (throw-invalid-seg mem-seg)))))
 
 
 (defn gen-binary-op 
   "Generates assembly code to perform a binary operation on the stack. 
   Ordering is <second to top item on stack> <op> <top item on stack>"
   [op]
-  [(str "// start binary op, " op)
-   ; 2nd thing on stack -> D
-   "@SP"
-   "M=M-1"
-   "M=M-1"
-   "A=M"
-   "D=M"
-   ; 1st thing on stack -> M
-   "@SP"
-   "M=M+1"
-   "A=M"
-   ; do operation
-   (str "D=D" op "M")
-   ; put D onto stack, can't use push-D because @SP was messed with before
-   "@SP"
-   "M=M-1"
-   "A=M"
-   "M=D"
-   ; move SP
-   inc-sp
-   (str "// end binary op, " op)])
+  (with-comment (str "binary op, " op)
+    [; 2nd thing on stack -> D
+     "@SP"
+     "M=M-1"
+     "M=M-1"
+     "A=M"
+     "D=M"
+     ; 1st thing on stack -> M
+     "@SP"
+     "M=M+1"
+     "A=M"
+     ; do operation
+     (str "D=D" op "M")
+     ; put D onto stack, can't use push-D because @SP was messed with before
+     "@SP"
+     "M=M-1"
+     "A=M"
+     "M=D"
+     ; move SP
+     inc-sp]))
 
 
 (defn gen-unary-op
   "Generates assembly code to perform a unary operation on the stack."
   [op]
-  [(str "// start unary op, " op)
-   "@SP"
-   "A=M"
-   "A=A-1"
-   (str "M=" op "M")
-   (str "// end unary op, " op)])
+  (with-comment (str "Unary op, " op)
+    ["@SP"
+     "A=M"
+     "A=A-1"
+     (str "M=" op "M")]))
 
 
 (defn label
@@ -322,24 +315,23 @@
   (let [; generate two unique labels for the true case and the false case
         tl (gensym "COND_TRUE_")
         el (gensym "COND_FALSE_")]
-    ["// start conditional eval"
-     ; do subtraction to use jumps to compare against 0
-     ; Example: x < y  ->  x - y < 0
-     (gen-binary-op "-")
-     pop-to-D
-     ; jump to true label if operation result is true, otherwise continue
-     (str "@" tl)
-     (str "D;J" op) 
-     ; jump did not happen so D=false, jump to el 
-     "D=0"
-     (str "@" el)
-     "0;JMP"
-     (label tl)
-     ; jump did happen set D=true
-     "D=-1"
-     (label el)
-     push-D
-     "// end conditional eval"])) 
+    (with-comment (str "Conditional op, " op)
+      [; do subtraction to use jumps to compare against 0
+       ; Example: x < y  ->  x - y < 0
+       (gen-binary-op "-")
+       pop-to-D
+       ; jump to true label if operation result is true, otherwise continue
+       (str "@" tl)
+       (str "D;J" op) 
+       ; jump did not happen so D=false, jump to el 
+       "D=0"
+       (str "@" el)
+       "0;JMP"
+       (label tl)
+       ; jump did happen set D=true
+       "D=-1"
+       (label el)
+       push-D])))
 
 
 ; Implementations for all the arithmetic and logical operators.
@@ -380,25 +372,120 @@
   (gen-unary-op "!"))
 
 
+
 ; impl for function calls / returns
+
+
+(defmethod compile-cmd :function
+  [_ [_ fn-name local-count :as cmd]]
+  (with-comment cmd
+    [; create a label for the function
+     (label fn-name)
+     ; initialize local variables to 0
+     (into [] (repeat local-count (push-constant-seg 0)))]))
+
+
+(defn psuedo-pop-frame-item 
+  "Used by :return command to 'pop' a value from FRAME/R13 to dest."
+  [dest]
+  ["@R13"
+   "M=M-1"
+   "A=M"
+   "D=M"
+   (str "@" dest)
+   "M=D"])
+
+
+(defmethod compile-cmd :return
+  [_ cmd]
+  (with-comment cmd
+    ["// FRAME = LCL"
+     "@LCL"
+     "D=M"
+     "@R13"
+     "M=D"
+     "// RET = *(FRAME - 5)"
+     "@R13"
+     "D=M"
+     "@5"
+     "D=D-A"
+     "A=D"
+     "D=M"
+     "@R14"
+     "M=D"
+     "// *ARG = pop()"
+     pop-to-D
+     "@ARG"
+     "A=M"
+     "M=D"
+     "// SP = ARG + 1"
+     "@ARG"
+     "D=M"
+     "D=D+1"
+     "@SP"
+     "M=D"
+     "// THAT = *(FRAME - 1)"
+     (psuedo-pop-frame-item "THAT")
+     "// THIS = *(FRAME - 2)"
+     (psuedo-pop-frame-item "THIS")
+     "// ARG = *(FRAME - 3)"
+     (psuedo-pop-frame-item "ARG")
+     "// LCL = *(FRAME - 4)"
+     (psuedo-pop-frame-item "LCL")
+     "// goto RET"
+     "@R14"
+     "A=M"
+     "0;JMP"]))
+
+(defmethod compile-cmd :call
+  [_ [_ fn-name arg-count :as cmd]]
+  (with-comment cmd
+    (let [return-label (gensym (str "RETURN_FROM_" fn-name))]
+      ["// save the dynamic segment locations"
+       (push-constant-seg return-label)
+       (push-constant-seg "LCL")
+       (push-constant-seg "ARG")
+       (push-constant-seg "THIS")
+       (push-constant-seg "THAT")
+       "// ARG = SP - arg-count - 5"
+       "@SP"
+       "D=M"
+       (str "@" arg-count)
+       "D=D-A"
+       "@5"
+       "D=D-A"
+       "@ARG"
+       "M=D"
+       "// LCL = SP"
+       "@SP"
+       "D=A"
+       "@LCL"
+       "M=D"
+       (str "// jump to " fn-name)
+       (str "@" fn-name)
+       (str "0;JMP")
+       (label return-label)])))
 
 
 ; impl for control flow instructions
 
 (defmethod compile-cmd :label
-  [_ [_ label-name]]
-  [(label label-name)])
+  [_ [_ label-name :as cmd]]
+  (with-comment cmd
+    [(label label-name)]))
 
 (defmethod compile-cmd :goto
-  [_ [_ label-name]]
-  [(str "@" label-name)
-   "0;JMP"])
+  [_ [_ label-name :as cmd]]
+  (with-comment cmd
+    [(str "@" label-name)
+     "0;JMP"]))
 
 (defmethod compile-cmd :if-goto
-  [_ [_ label-name]]
-  [pop-to-D
-   (str "@" label-name)
-   "D;JNE"])
+  [_ [_ label-name :as cmd]]
+  (with-comment cmd
+    [pop-to-D
+     (str "@" label-name)
+     "D;JNE"]))
 
 
 (defn compile-vm-code
@@ -461,7 +548,7 @@
   (println "Compiling" (str file))
   (->> (p/slurp file)
        (compile-vm-code file)
-       (into prelude)
+       #_(into prelude)
        (flatten)
        (string/join "\n")))
 
