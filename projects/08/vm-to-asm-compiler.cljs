@@ -69,6 +69,7 @@
      R[24575-32767]  unused memory space?"
   (:require [clojure.string :as string]
             [clojure.pprint :refer [pprint]]
+            [clojure.spec.alpha :as spec]
             [planck.core :as p]
             [planck.io :as io]))
 
@@ -521,6 +522,11 @@
   (.replace (str file) vm-file-pattern ".asm"))
 
 
+(defn program->str
+  [program]
+  (->> program (flatten) (string/join "\n")))
+
+
 (defn prelude-val
   "Generates assembly code to set up a single value for the prelude, see below."
   [pointer v]
@@ -533,13 +539,29 @@
 
 (def prelude
   ^{:doc "Assembly code that sets up the initial state of the computer."}
-  ["// prelude"
-   (prelude-val "SP" 256)
-   (prelude-val "LCL" 300)
-   (prelude-val "ARG" 400)
-   (prelude-val "THIS" 3000)
-   (prelude-val "THAT" 3010)
-   "// end prelude"])
+  (program->str 
+    (with-comment "PRELUDE"
+      [(prelude-val "SP" 256)
+       (prelude-val "LCL" 300)
+       (prelude-val "ARG" 400)
+       (prelude-val "THIS" 3000)
+       (prelude-val "THAT" 3010)])))
+
+
+(def sys-init-call
+  (let [end-loop (gensym "END_LOOP_")]
+    (program->str
+      (with-comment "Bootstrap Sys.init call"
+        [(compile-cmd nil [:call "Sys.init" 0])
+         (label end-loop)
+         (str "@" end-loop)
+         "0;JMP"]))))
+
+
+(defn build-options
+  [options]
+  (str (if (contains? options "--no-prelude") "" prelude)
+       (if (contains? options "--no-sys-init") "" sys-init-call)))
 
 
 (defn compile-file*
@@ -548,15 +570,13 @@
   (println "Compiling" (str file))
   (->> (p/slurp file)
        (compile-vm-code file)
-       #_(into prelude)
-       (flatten)
-       (string/join "\n")))
+       (program->str)))
 
 
 (defn compile-file
   "Compiles a single vm file. The output asm file will be a sibling of the vm 
   file on the filesystem."
-  [file]
+  [file options]
   (p/spit (output-file file)
           (compile-file* file)))
 
@@ -564,16 +584,18 @@
 (defn dir->asm-file
   "Given a directory to be compiled generates the name of the output asm file."
   [dir]
-  (let [[_ last-seg] (re-find #"/([^/]+)$" (str dir))]
-    (io/file "./" (str last-seg ".asm"))))
+  (let [path (string/replace (str dir) #"/$" "")
+        [_ filename] (re-find #"/([^/]+)$" path)]
+    (io/file path (str filename ".asm"))))
 
 
 (defn compile-dir
   "Compiles all the vm files in the given directory. Outputs a single asm file
   in the pwd with the same name as the directory."
-  [dir]
+  [dir options]
   (let [asm-file (dir->asm-file dir)]
-    (p/spit asm-file (str "// Compiled from dir " dir "\n"))
+    (p/spit asm-file (build-options options))
+    (p/spit asm-file (str "// Compiled from dir " dir "\n") :append true)
     (doseq [file (io/list-files dir)]
       (when (vm-file? file)
         (p/spit asm-file 
@@ -583,16 +605,25 @@
                 :append true)))))
 
 
-(def usage "Usage: planck vm-to-asm-compiler.cljs <source>\n source is a directory or an vm file.")
+(def usage "Usage: planck vm-to-asm-compiler.cljs <source> <options>\nsource is a directory or an vm file.\nOptions: --no-sys-init and --no-prelude")
 
+(spec/def ::args 
+  (spec/cat :res string? 
+            :options (spec/* #{"--no-sys-init" "--no-prelude"})))
+
+(defn compile-res
+  [res options]
+  (let [file (io/file res)]
+    (if (io/directory? file)
+      (compile-dir file options)
+      (compile-file file options))))
 
 (defn -main
   [& args]
-  (assert (= 1 (count args)) usage)
-  (let [file (io/file (first args))]
-    (if (io/directory? file)
-      (compile-dir file)
-      (compile-file file))))
+  (let [{:keys [res options] :as v} (spec/conform ::args args)]
+    (if (= v ::spec/invalid)
+      (println usage)
+      (compile-res res (into #{} options)))))
 
 
 (set! *main-cli-fn* -main)
