@@ -2,37 +2,37 @@
   "Nand2Tetris VM code to ASM translator
 
    Dependencies:
-     * Planck, a ClojureScript runtime environment based on JavaScriptCore and 
+     * Planck, a ClojureScript runtime environment based on JavaScriptCore and
                the self hosted version of ClojureScript.
-   
+
    Running:
      * `planck ./vm-to-asm-compiler.cljs dir1` or:
      * `planck ./vm-to-asm-compiler.cljs a/b/c.vm`
 
    General algorithm:
-     Input: a list of directories that may contain .vm code files.. 
+     Input: a list of directories that may contain .vm code files..
      Output: .asm files for each .vm file. The .asm files are placed in the
              same directory as it's corresponding .vm file.
      Algorithm:
         - recursively search the given directories for .vm files
-        - compile each .vm file line by line according to the hack computer and 
+        - compile each .vm file line by line according to the hack computer and
           vm specs into hack assembly code.
         - Write the code for each file into a .asm file.
 
 
    Reference Information for the Hack machine and the VM language.
-  
+
    memory segments
    -------------------------------------
-     argument - R[2], ARG 
+     argument - R[2], ARG
      local    - R[1], LCL
-     static   - with assembler symbols 
-     constant - offset is the constant 
+     static   - with assembler symbols
+     constant - offset is the constant
      this     - R[3], THIS
      that     - R[4], THAT
      pointer  - R[3], R[4]
      temp     - R[5-12]
-  
+
    ops
    -------------------------------------
      add
@@ -52,7 +52,7 @@
      label
      goto
      if-goto
-  
+
    memory space
    -------------------------------------
      R[0]            SP
@@ -94,14 +94,14 @@
 
 
 (def push-D
-  ^{:doc "Snippet to push the value of D onto the stack."} 
+  ^{:doc "Snippet to push the value of D onto the stack."}
   ["@SP"
    "A=M"
    "M=D"
    inc-sp])
 
 
-(defn with-comment 
+(defn with-comment
   [c code]
   [(str "// start " (prn-str c))
    code
@@ -117,7 +117,7 @@
 
 
 (defn throw-invalid-seg
-  "Helper fn that throws an error stating that an invalid memory segment was 
+  "Helper fn that throws an error stating that an invalid memory segment was
   referenced in the program."
   [mem-seg]
   (throw (js/Error. (str mem-seg " is not a valid memory segment."))))
@@ -128,14 +128,14 @@
   the form @filename.offset"
   [file offset]
   (let [sym (->> (str file)
-                 (re-seq #"([^/]*)\.vm$") 
+                 (re-seq #"([^/]*)\.vm$")
                  first
                  second)]
     (str "@" sym "." offset)))
 
 
 (def relative-segs
-  ^{:doc "Maps relative memory segment names to the corresponding assembler 
+  ^{:doc "Maps relative memory segment names to the corresponding assembler
          symbols"}
   {"local" "LCL"
    "argument" "ARG"
@@ -146,7 +146,7 @@
 (def absolute-segs
   ^{:doc "Maps static memory segment names to a vector of the form:
          [base-address max-offset]"}
-  {"temp" [5 7] 
+  {"temp" [5 7]
    "pointer" [3 1]})
 
 
@@ -154,7 +154,7 @@
   "Given a relative memory segment (local, argument, this, that) and an index
   returns a vector of assembly code that sets the A register to the referenced
   address."
-  [mem-seg offset] 
+  [mem-seg offset]
   (assert (contains? relative-segs mem-seg)
           (str "Valid memory segments are " (keys relative-segs)))
   [(str "@" offset)
@@ -165,7 +165,7 @@
 
 
 (defn static-mem-seg-addr
-  "Given a static memory segment and an offset returns the Rxx symbol 
+  "Given a static memory segment and an offset returns the Rxx symbol
   corresponding to the location."
   [mem-seg offset]
   (let [[base max-offset] (absolute-segs mem-seg)]
@@ -176,7 +176,7 @@
 
 
 (defn push-absolute-seg
-  "Generates assembly code that pushes a value from an absolute segment 
+  "Generates assembly code that pushes a value from an absolute segment
   (pointer, temp) to the stack."
   [mem-seg offset]
   [(str "@" (static-mem-seg-addr mem-seg offset))
@@ -209,7 +209,7 @@
    push-D])
 
 
-; Generates assembly code for the push instruction. Throws an error if an 
+; Generates assembly code for the push instruction. Throws an error if an
 ; invalid memory segment is referenced.
 (defmethod compile-cmd :push
   [file [_ mem-seg offset :as cmd]]
@@ -232,7 +232,7 @@
 
 
 (defn pop-relative-seg
-  "Generates assembly code that pops the top value from the stack into a 
+  "Generates assembly code that pops the top value from the stack into a
   relative memory segment (local, argument, this, that)."
   [mem-seg offset]
   [(mem-seg-addr-to-A mem-seg offset)
@@ -246,7 +246,7 @@
 
 
 (defn pop-absolute-seg
-  "Generates assembly code that pops the top value from the stack into an 
+  "Generates assembly code that pops the top value from the stack into an
   absolute memory segment (pointer, temp)."
   [mem-seg offset]
   [pop-to-D
@@ -266,8 +266,8 @@
             :else (throw-invalid-seg mem-seg)))))
 
 
-(defn gen-binary-op 
-  "Generates assembly code to perform a binary operation on the stack. 
+(defn gen-binary-op
+  "Generates assembly code to perform a binary operation on the stack.
   Ordering is <second to top item on stack> <op> <top item on stack>"
   [op]
   (with-comment (str "binary op, " op)
@@ -309,7 +309,7 @@
 
 
 (defn gen-cond-op
-  "Generates assembly code to execute a comparison operator on the stack.  
+  "Generates assembly code to execute a comparison operator on the stack.
   Ordering is the same as gen-binary-op. Uses the various jump instructions
   to conditionally push true = -1, and false = 0 onto the stack."
   [op]
@@ -323,8 +323,8 @@
        pop-to-D
        ; jump to true label if operation result is true, otherwise continue
        (str "@" tl)
-       (str "D;J" op) 
-       ; jump did not happen so D=false, jump to el 
+       (str "D;J" op)
+       ; jump did not happen so D=false, jump to el
        "D=0"
        (str "@" el)
        "0;JMP"
@@ -386,7 +386,7 @@
      (into [] (repeat local-count (push-constant-seg 0)))]))
 
 
-(defn psuedo-pop-frame-item 
+(defn psuedo-pop-frame-item
   "Used by :return command to 'pop' a value from FRAME/R13 to dest."
   [dest]
   ["@R13"
@@ -438,16 +438,28 @@
      "A=M"
      "0;JMP"]))
 
+
+(defn push-pointer
+  [pointer-name]
+  [(str "@" pointer-name)
+   "D=M"
+   push-D])
+
+
 (defmethod compile-cmd :call
   [_ [_ fn-name arg-count :as cmd]]
   (with-comment cmd
     (let [return-label (gensym (str "RETURN_FROM_" fn-name))]
       ["// save the dynamic segment locations"
        (push-constant-seg return-label)
-       (push-constant-seg "LCL")
-       (push-constant-seg "ARG")
-       (push-constant-seg "THIS")
-       (push-constant-seg "THAT")
+       "// push LCL"
+       (push-pointer "LCL")
+       "// push ARG"
+       (push-pointer "ARG")
+       "// push THIS"
+       (push-pointer "THIS")
+       "// push THAT"
+       (push-pointer "THAT")
        "// ARG = SP - arg-count - 5"
        "@SP"
        "D=M"
@@ -459,7 +471,7 @@
        "M=D"
        "// LCL = SP"
        "@SP"
-       "D=A"
+       "D=M"
        "@LCL"
        "M=D"
        (str "// jump to " fn-name)
@@ -494,10 +506,10 @@
   of assembly code instructions. The vector may contain nested vectors."
   [file code]
   (into []
-        (comp 
+        (comp
           ; remove comments and blank lines
           (map #(string/replace % #"//.*$" ""))
-          (map string/trim) 
+          (map string/trim)
           (remove empty?)
           ; split instruction arguments
           (map #(string/split % #"\s+"))
@@ -539,7 +551,7 @@
 
 (def prelude
   ^{:doc "Assembly code that sets up the initial state of the computer."}
-  (program->str 
+  (program->str
     (with-comment "PRELUDE"
       [(prelude-val "SP" 256)
        (prelude-val "LCL" 300)
@@ -574,7 +586,7 @@
 
 
 (defn compile-file
-  "Compiles a single vm file. The output asm file will be a sibling of the vm 
+  "Compiles a single vm file. The output asm file will be a sibling of the vm
   file on the filesystem."
   [file options]
   (p/spit (output-file file)
@@ -598,8 +610,8 @@
     (p/spit asm-file (str "// Compiled from dir " dir "\n") :append true)
     (doseq [file (io/list-files dir)]
       (when (vm-file? file)
-        (p/spit asm-file 
-                (str "// Start " file "\n" 
+        (p/spit asm-file
+                (str "// Start " file "\n"
                      (compile-file* file) "\n"
                      "// End " file "\n")
                 :append true)))))
@@ -607,8 +619,8 @@
 
 (def usage "Usage: planck vm-to-asm-compiler.cljs <source> <options>\nsource is a directory or an vm file.\nOptions: --no-sys-init and --no-prelude")
 
-(spec/def ::args 
-  (spec/cat :res string? 
+(spec/def ::args
+  (spec/cat :res string?
             :options (spec/* #{"--no-sys-init" "--no-prelude"})))
 
 (defn compile-res
